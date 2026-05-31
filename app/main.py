@@ -230,17 +230,8 @@ def predict(emp: EmployeeInput):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/predict-bulk", summary="Predict attrition for multiple employees via CSV upload")
 async def predict_bulk(file: UploadFile = File(...)):
-    """
-    Upload a CSV file with employee data.
-    - Fuzzy matches your column names to required fields automatically
-    - Ignores extra columns
-    - Fills missing numerical fields with dataset medians
-    - Fails clearly if categorical fields (Department, JobRole etc.) are missing
-    - Returns a CSV with Prediction, Probability, RiskTier columns added
-    """
     try:
         contents = await file.read()
         df = pd.read_csv(io.BytesIO(contents))
@@ -258,6 +249,41 @@ async def predict_bulk(file: UploadFile = File(...)):
                     "error": "Missing required categorical columns that cannot be inferred",
                     "missing": missing_categoricals,
                     "hint": "Download /sample-csv to see required column names"
+                }
+            )
+
+        # Check invalid categorical values
+        VALID_VALUES = {
+            "Department": ["Sales", "Research & Development", "Human Resources"],
+            "Gender": ["Male", "Female"],
+            "OverTime": ["Yes", "No"],
+            "BusinessTravel": ["Non-Travel", "Travel_Rarely", "Travel_Frequently"],
+            "MaritalStatus": ["Single", "Married", "Divorced"],
+            "JobRole": [
+                "Sales Executive", "Research Scientist", "Laboratory Technician",
+                "Manufacturing Director", "Healthcare Representative", "Manager",
+                "Sales Representative", "Research Director", "Human Resources"
+            ],
+            "EducationField": [
+                "Life Sciences", "Medical", "Marketing",
+                "Technical Degree", "Human Resources", "Other"
+            ]
+        }
+
+        invalid_values = {}
+        for field, valid in VALID_VALUES.items():
+            if field in df.columns:
+                bad = df[~df[field].isin(valid)][field].unique().tolist()
+                if bad:
+                    invalid_values[field] = bad
+
+        if invalid_values:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Invalid categorical values found",
+                    "invalid": invalid_values,
+                    "hint": "Check valid values for each field in /docs"
                 }
             )
 
